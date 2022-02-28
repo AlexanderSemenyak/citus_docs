@@ -1,3 +1,5 @@
+orig: https://github.com/citusdata/citus_docs
+
 #### Sphinx source files for Citus documentation
 
 To generate HTML version:
