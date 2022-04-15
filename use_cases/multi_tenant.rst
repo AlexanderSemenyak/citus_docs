@@ -193,7 +193,7 @@ Try it Yourself
 
   You'll run the SQL commands using psql and connect to the Coordinator node:
 
-  * **Docker**: :code:`docker exec -it citus_master psql -U postgres`
+  * **Docker**: :code:`docker exec -it citus psql -U postgres`
 
 At this point feel free to follow along in your own Citus cluster by `downloading <https://examples.citusdata.com/mt_ref_arch/schema.sql>`_ and executing the SQL to create the schema. Once the schema is ready, we can tell Citus to create shards on the workers. From the coordinator node, run:
 
@@ -427,7 +427,7 @@ Multi-tenant databases should be designed for future scale as business grows or 
 
 Being able to rebalance data in the Citus cluster allows you to grow your data size or number of customers and improve performance on demand. Adding new machines allows you to keep data in memory even when it is much larger than what a single machine can store.
 
-Also, if data increases for only a few large tenants, then you can isolate those particular tenants to separate nodes for better performance. (Tenant isolation is a feature of Citus Enterprise edition.)
+Also, if data increases for only a few large tenants, then you can isolate those particular tenants to separate nodes for better performance. (Tenant isolation is a feature of our :ref:`cloud_topic`.)
 
 To scale out your Citus cluster, first add a new worker node to it. On Azure Database for PostgreSQL - Hyperscale (Citus), you can use the Azure Portal to add the required number of nodes. Alternatively, if you run your own Citus installation, you can add nodes manually with the :ref:`citus_add_node` UDF.
 
@@ -437,16 +437,14 @@ Once you add the node it will be available in the system. However, at this point
 
   SELECT rebalance_table_shards('companies');
 
-Rebalancing preserves :ref:`colocation`, which means we can tell Citus to rebalance the companies table and it will take the hint and rebalance the other tables which are distributed by company_id. Also, with Citus Enterprise Edition, applications do not need to undergo downtime during shard rebalancing. Read requests continue seamlessly, and writes are locked only when they affect shards which are currently in flight. In Citus Community edition, writes to shards are blocked during rebalancing but reads are unaffected.
-
-You can learn more about how shard rebalancing works here: :ref:`scaling_out`.
+Rebalancing preserves :ref:`colocation`, which means we can tell Citus to rebalance the companies table and it will take the hint and rebalance the other tables which are distributed by company_id. Also, with our :ref:`cloud_topic`, applications do not need to undergo downtime during shard rebalancing. Read requests continue seamlessly, and writes are locked only when they affect shards which are currently in flight. In Citus Community edition, writes to shards are blocked during rebalancing but reads are unaffected.
 
 Dealing with Big Tenants
 ------------------------
 
 .. note::
 
-  This section uses features available only in Citus Enterprise.
+  This section uses features available only in our :ref:`cloud_topic`.
 
 The previous section describes a general-purpose way to scale a cluster as the number of tenants increases. However, users often have two questions. The first is what will happen to their largest tenant if it grows too big. The second is what are the performance implications of hosting a large tenant together with small ones on a single worker node, and what can be done about it.
 

@@ -19,11 +19,7 @@ Either way, after adding a node to an existing cluster it will not contain any d
 How does Citus handle failure of a worker node?
 -----------------------------------------------
 
-Citus supports two modes of replication, allowing it to tolerate worker-node failures. In the first model, we use PostgreSQL's streaming replication to replicate the entire worker-node as-is. In the second model, Citus can replicate data modification statements, thus replicating shards across different worker nodes. They have different advantages depending on the workload and use-case as discussed below:
-
-1. **PostgreSQL streaming replication.** This option is best for heavy OLTP workloads. It replicates entire worker nodes by continuously streaming their WAL records to a standby. You can configure streaming replication on-premise yourself by consulting the `PostgreSQL replication documentation <https://www.postgresql.org/docs/current/static/warm-standby.html#STREAMING-REPLICATION>`_ or use :ref:`Citus Cloud <cloud_overview>` which is pre-configured for replication and high-availability.
-
-2. **Citus shard replication.** This option is best suited for an append-only workload. Citus replicates shards across different nodes by automatically replicating DML statements and managing consistency. If a node goes down, the coordinator node will continue to serve queries by routing the work to the replicas seamlessly. To enable shard replication simply set :code:`SET citus.shard_replication_factor = 2;` (or higher) before distributing data to the cluster.
+Citus uses PostgreSQL's streaming replication to replicate the entire worker-node as-is. It replicates worker nodes by continuously streaming their WAL records to a standby. You can configure streaming replication on-premise yourself by consulting the `PostgreSQL replication documentation <https://www.postgresql.org/docs/current/static/warm-standby.html#STREAMING-REPLICATION>`_.
 
 How does Citus handle failover of the coordinator node?
 -------------------------------------------------------
@@ -92,11 +88,10 @@ How do I create database roles, functions, extensions etc in a Citus cluster?
 
 Certain commands, when run on the coordinator node, do not get propagated to the workers:
 
-* ``CREATE ROLE/USER (gets propagated in Citus Enterprise)``
+* ``CREATE ROLE/USER``
 * ``CREATE DATABASE``
 * ``ALTER … SET SCHEMA``
 * ``ALTER TABLE ALL IN TABLESPACE``
-* ``CREATE FUNCTION`` (use :ref:`create_distributed_function`)
 * ``CREATE TABLE`` (see :ref:`table_types`)
 
 For the other types of objects above, create them explicitly on all nodes. Citus provides a function to execute queries across all workers:
@@ -172,23 +167,6 @@ Can I run Citus on Microsoft Azure?
 -----------------------------------
 
 Yes, Citus is a deployment option of `Azure Database for PostgreSQL <https://docs.microsoft.com/azure/postgresql/hyperscale/>`_ called **Hyperscale**. It is a fully managed database-as-a-service.
-
-Can I run Citus on Amazon RDS?
-------------------------------
-
-At this time Amazon does not support running Citus directly on top of Amazon RDS.
-
-What is the state of Citus on AWS?
-----------------------------------
-
-Existing customers of :ref:`Citus Cloud <cloud_overview>` can provision a Citus cluster on Amazon Web Services. However, we are no longer accepting new signups for Citus Cloud.
-
-For a fully managed Citus database-as-a-service, try `Azure Database for PostgreSQL - Hyperscale (Citus) <https://docs.microsoft.com/azure/postgresql/overview#azure-database-for-postgresql--hyperscale-citus>`_.
-
-Can I create a new DB in a Citus Cloud instance?
-------------------------------------------------
-
-No, but you can use database `schemas <https://www.postgresql.org/docs/current/ddl-schemas.html>`_ to separate and group related sets of tables.
 
 Can I shard by schema on Citus for multi-tenant applications?
 -------------------------------------------------------------

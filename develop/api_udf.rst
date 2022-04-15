@@ -13,13 +13,13 @@ create_distributed_table
 $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
 
 The create_distributed_table() function is used to define a distributed table
-and create its shards if it's a hash-distributed table. This function takes in a
-table name, the distribution column and an optional distribution method and inserts
-appropriate metadata to mark the table as distributed. The function defaults to
-'hash' distribution if no distribution method is specified. If the table is
-hash-distributed, the function also creates worker shards based on the shard
-count and shard replication factor configuration values. If the table contains
-any rows, they are automatically distributed to worker nodes.
+and create its shards if it's a hash-distributed table. This function takes in
+a table name, the distribution column and an optional distribution method and
+inserts appropriate metadata to mark the table as distributed. The function
+defaults to 'hash' distribution if no distribution method is specified. If the
+table is hash-distributed, the function also creates worker shards based on the
+shard count configuration value. If the table contains any rows, they are
+automatically distributed to worker nodes.
 
 Arguments
 ************************
@@ -28,10 +28,7 @@ Arguments
 
 **distribution_column:** The column on which the table is to be distributed.
 
-**distribution_type:** (Optional) The method according to which the table is
-to be distributed. Permissible values are append or hash, and defaults to 'hash'.
-
-**colocate_with:** (Optional) include current table in the co-location group of another table. By default tables are co-located when they are distributed by columns of the same type, have the same shard count, and have the same replication factor.
+**colocate_with:** (Optional) include current table in the co-location group of another table. By default tables are co-located when they are distributed by columns of the same type with the same shard count.
 If you want to break this colocation later, you can use :ref:`update_distributed_table_colocation <update_distributed_table_colocation>`. Possible values for :code:`colocate_with` are :code:`default`, :code:`none` to start a new co-location group, or the name of another table to co-locate with that table.  (See :ref:`colocation_groups`.)
 
 Keep in mind that the default value of ``colocate_with`` does implicit co-location. As :ref:`colocation` explains, this can be a great thing when tables are related or will be joined. However, when two tables are unrelated but happen to use the same datatype for their distribution columns, accidentally co-locating them can decrease performance during :ref:`shard rebalancing <shard_rebalancing>`. The table shards will be moved together unnecessarily in a "cascade."
@@ -286,7 +283,6 @@ Arguments
 
   * distribution method
   * distribution column type
-  * replication type
   * shard count
 
 Failing this, Citus will raise an error. For instance, attempting to colocate tables ``apples`` and ``oranges`` whose distribution column types differ results in:
@@ -322,9 +318,6 @@ column is the same type, this can be useful if the tables are related and will
 do some joins. If table A and B are colocated, and table A gets rebalanced, table B 
 will also be rebalanced. If table B does not have a replica identity, the rebalance will 
 fail. Therefore, this function can be useful breaking the implicit colocation in that case.
-
-Both of the arguments should be a hash distributed table, currently we do not support colocation 
-of APPEND distributed tables.
 
 Note that this function does not move any data around physically.
 
@@ -437,34 +430,6 @@ Example
     'register_for_event(int, int)', 'p_event_id',
     colocate_with := 'event_responses'
   );
-
-master_create_empty_shard
-$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
-
-The master_create_empty_shard() function can be used to create an empty shard for an *append* distributed table. Behind the covers, the function first selects shard_replication_factor workers to create the shard on. Then, it connects to the workers and creates empty placements for the shard on the selected workers. Finally, the metadata is updated for these placements on the coordinator to make these shards visible to future queries. The function errors out if it is unable to create the desired number of shard placements.
-
-Arguments
-*********************
-
-**table_name:** Name of the append distributed table for which the new shard is to be created.
-
-Return Value
-****************************
-
-**shard_id:** The function returns the unique id assigned to the newly created shard.
-
-Example
-**************************
-
-This example creates an empty shard for the github_events table. The shard id of the created shard is 102089.
-
-.. code-block:: postgresql
-
-    SELECT * from master_create_empty_shard('github_events');
-     master_create_empty_shard
-    ---------------------------
-                    102089
-    (1 row)
 
 .. _alter_columnar_table_set:
 
@@ -636,84 +601,6 @@ Example
     'foo', now() - interval '6 months',
     'columnar'
   );
-
-Table and Shard DML
--------------------
-
-.. _master_append_table_to_shard:
-
-master_append_table_to_shard
-$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
-
-The master_append_table_to_shard() function can be used to append a PostgreSQL table's contents to a shard of an *append* distributed table. Behind the covers, the function connects to each of the workers which have a placement of that shard and appends the contents of the table to each of them. Then, the function updates metadata for the shard placements on the basis of whether the append succeeded or failed on each of them.
-
-If the function is able to successfully append to at least one shard placement, the function will return successfully. It will also mark any placement to which the append failed as INACTIVE so that any future queries do not consider that placement. If the append fails for all placements, the function quits with an error (as no data was appended). In this case, the metadata is left unchanged.
-
-Arguments
-************************
-
-**shard_id:** Id of the shard to which the contents of the table have to be appended.
-
-**source_table_name:** Name of the PostgreSQL table whose contents have to be appended.
-
-**source_node_name:** DNS name of the node on which the source table is present ("source" node).
-
-**source_node_port:** The port on the source worker node on which the database server is listening.
-
-Return Value
-****************************
-
-**shard_fill_ratio:** The function returns the fill ratio of the shard which is defined as the ratio of the current shard size to the configuration parameter shard_max_size.
-
-Example
-******************
-
-This example appends the contents of the github_events_local table to the shard having shard id 102089. The table github_events_local is present on the database running on the node master-101 on port number 5432. The function returns the ratio of the the current shard size to the maximum shard size, which is 0.1 indicating that 10% of the shard has been filled.
-
-.. code-block:: postgresql
-
-    SELECT * from master_append_table_to_shard(102089,'github_events_local','master-101', 5432);
-     master_append_table_to_shard
-    ------------------------------
-                     0.100548
-    (1 row)
-
-
-master_apply_delete_command
-$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
-
-The master_apply_delete_command() function is used to delete shards which match the criteria specified by the delete command on an *append* distributed table. This function deletes a shard only if all rows in the shard match the delete criteria. As the function uses shard metadata to decide whether or not a shard needs to be deleted, it requires the WHERE clause in the DELETE statement to be on the distribution column. If no condition is specified, then all shards of that table are deleted.
-
-Behind the covers, this function connects to all the worker nodes which have shards matching the delete criteria and sends them a command to drop the selected shards. Then, the function updates the corresponding metadata on the coordinator. If the function is able to successfully delete a shard placement, then the metadata for it is deleted. If a particular placement could not be deleted, then it is marked as TO DELETE. The placements which are marked as TO DELETE are not considered for future queries and can be cleaned up later.
-
-Arguments
-*********************
-
-**delete_command:** valid `SQL DELETE <http://www.postgresql.org/docs/current/static/sql-delete.html>`_ command
-
-Return Value
-**************************
-
-**deleted_shard_count:** The function returns the number of shards which matched the criteria and were deleted (or marked for deletion). Note that this is the number of shards and not the number of shard placements.
-
-Example
-*********************
-
-The first example deletes all the shards for the github_events table since no delete criteria is specified. In the second example, only the shards matching the criteria (3 in this case) are deleted.
-
-.. code-block:: postgresql
-
-    SELECT * from master_apply_delete_command('DELETE FROM github_events');
-     master_apply_delete_command
-    -----------------------------
-                               5
-    (1 row)
- 
-    SELECT * from master_apply_delete_command('DELETE FROM github_events WHERE review_date < ''2009-03-01''');
-     master_apply_delete_command
-    -----------------------------
-                               3
-    (1 row)
 
 Metadata / Configuration Information
 ------------------------------------------------------------------------
@@ -1051,6 +938,101 @@ Example
 
     (3 rows)
 
+.. _backend_pid:
+
+citus_backend_gpid
+$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+
+The citus_backend_gpid() function returns the global process identifier (GPID)
+for the PostgreSQL backend serving the current session. A GPID encodes both a
+node in the Citus cluster, and the operating system process ID of PostgreSQL on
+that node.
+
+Citus extends the PostgreSQL `server signaling functions
+<https://www.postgresql.org/docs/current/functions-admin.html#FUNCTIONS-ADMIN-SIGNAL-TABLE)>`_
+``pg_cancel_backend()`` and ``pg_terminate_backend()`` so that they accept
+GPIDs. In Citus, calling these functions on one node can affect a backend
+running on another node.
+
+Arguments
+************************
+
+N/A
+
+Return Value
+******************************
+
+An integer GPID, of the form (NodeId * 10,000,000,000) + ProcessId.
+
+Example
+***********************
+
+.. code-block:: postgresql
+
+    SELECT citus_backend_gpid();
+
+::
+
+     citus_backend_gpid
+    --------------------
+            10000002055
+
+
+.. _check_cluster_node_health:
+
+citus_check_cluster_node_health (beta)
+$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
+
+.. note::
+
+   This function is part of Citus 11-beta.
+
+Check connectivity between all nodes. If there are N nodes, this function
+checks all N\ :sup:`2` connections between them.
+
+Arguments
+************************
+
+N/A
+
+Return Value
+******************************
+
+List of tuples where each tuple contains the following information:
+
+**from_nodename:** DNS name of the source worker node
+
+**from_nodeport:** Port on the source worker node on which the database server is listening
+
+**to_nodename:** DNS name of the destination worker node
+
+**to_nodeport:** Port on the destination worker node on which the database server is listening
+
+**result:** Whether a connection could be established
+
+Example
+***********************
+
+.. code-block:: postgresql
+
+    SELECT * FROM citus_check_cluster_node_health();
+
+::
+
+     from_nodename │ from_nodeport │ to_nodename │ to_nodeport │ result
+    ---------------+---------------+-------------+-------------+--------
+     localhost     |          1400 | localhost   |        1400 | t
+     localhost     |          1400 | localhost   |        1401 | t
+     localhost     |          1400 | localhost   |        1402 | t
+     localhost     |          1401 | localhost   |        1400 | t
+     localhost     |          1401 | localhost   |        1401 | t
+     localhost     |          1401 | localhost   |        1402 | t
+     localhost     |          1402 | localhost   |        1400 | t
+     localhost     |          1402 | localhost   |        1401 | t
+     localhost     |          1402 | localhost   |        1402 | t
+
+    (9 rows)
+
 .. _set_coordinator_host:
 
 citus_set_coordinator_host
@@ -1100,7 +1082,7 @@ Example
 master_get_table_metadata
 $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
 
-The master_get_table_metadata() function can be used to return distribution related metadata for a distributed table. This metadata includes the relation id, storage type, distribution method, distribution column, replication count, maximum shard size and the shard placement policy for that table. Behind the covers, this function queries Citus metadata tables to get the required information and concatenates it into a tuple before returning it to the user.
+The master_get_table_metadata() function can be used to return distribution related metadata for a distributed table. This metadata includes the relation id, storage type, distribution method, distribution column, replication count (deprecated), maximum shard size and the shard placement policy for that table. Behind the covers, this function queries Citus metadata tables to get the required information and concatenates it into a tuple before returning it to the user.
 
 Arguments
 ***********************
@@ -1116,11 +1098,11 @@ A tuple containing the following information:
 
 **part_storage_type:** Type of storage used for the table. May be 't' (standard table), 'f' (foreign table) or 'c' (columnar table).
 
-**part_method:** Distribution method used for the table. May be 'a' (append), or 'h' (hash).
+**part_method:** Distribution method used for the table. Must be 'h' (hash).
 
 **part_key:** Distribution column for the table.
 
-**part_replica_count:** Current shard replication count.
+**part_replica_count:** (Deprecated) Current shard replication count.
 
 **part_max_size:** Current maximum shard size in bytes.
 
@@ -1136,7 +1118,7 @@ The example below fetches and displays the table metadata for the github_events 
     SELECT * from master_get_table_metadata('github_events');
      logical_relid | part_storage_type | part_method | part_key | part_replica_count | part_max_size | part_placement_policy 
     ---------------+-------------------+-------------+----------+--------------------+---------------+-----------------------
-             24180 | t                 | h           | repo_id  |                  2 |    1073741824 |                     2
+             24180 | t                 | h           | repo_id  |                  1 |    1073741824 |                     2
     (1 row)
 
 .. _get_shard_id:
@@ -1144,7 +1126,7 @@ The example below fetches and displays the table metadata for the github_events 
 get_shard_id_for_distribution_column
 $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
 
-Citus assigns every row of a distributed table to a shard based on the value of the row's distribution column and the table's method of distribution. In most cases the precise mapping is a low-level detail that the database administrator can ignore. However, it can be useful to determine a row's shard, either for manual database maintenance tasks or just to satisfy curiosity. The :code:`get_shard_id_for_distribution_column` function provides this info for hash-distributed tables as well as reference tables. It does not work for the append distribution.
+Citus assigns every row of a distributed table to a shard based on the value of the row's distribution column and the table's method of distribution. In most cases the precise mapping is a low-level detail that the database administrator can ignore. However, it can be useful to determine a row's shard, either for manual database maintenance tasks or just to satisfy curiosity. The :code:`get_shard_id_for_distribution_column` function provides this info for hash-distributed tables as well as reference tables.
 
 Arguments
 ************************
@@ -1315,40 +1297,6 @@ None
 Cluster Management And Repair Functions
 ----------------------------------------
 
-citus_copy_shard_placement
-$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
-
-If a shard placement fails to be updated during a modification command or a DDL operation, then it gets marked as inactive. The citus_copy_shard_placement function can then be called to repair an inactive shard placement using data from a healthy placement.
-
-To repair a shard, the function first drops the unhealthy shard placement and recreates it using the schema on the coordinator. Once the shard placement is created, the function copies data from the healthy placement and updates the metadata to mark the new shard placement as healthy. This function ensures that the shard will be protected from any concurrent modifications during the repair.
-
-Arguments
-**********
-
-**shard_id:** Id of the shard to be repaired.
-
-**source_node_name:** DNS name of the node on which the healthy shard placement is present ("source" node).
-
-**source_node_port:** The port on the source worker node on which the database server is listening.
-
-**target_node_name:** DNS name of the node on which the invalid shard placement is present ("target" node).
-
-**target_node_port:** The port on the target worker node on which the database server is listening.
-
-Return Value
-************
-
-N/A
-
-Example
-********
-
-The example below will repair an inactive shard placement of shard 12345 which is present on the database server running on 'bad_host' on port 5432. To repair it, it will use data from a healthy shard placement present on the server running on 'good_host' on port 5432.
-
-.. code-block:: postgresql
-
-    SELECT citus_copy_shard_placement(12345, 'good_host', 5432, 'bad_host', 5432);
-
 citus_move_shard_placement
 $$$$$$$$$$$$$$$$$$$$$$$$$$$$$
 
@@ -1379,7 +1327,7 @@ Arguments
 
   .. note::
 
-    Citus Community edition supports only the ``block_writes`` mode, and treats ``auto`` as ``block_writes``. Citus Enterprise edition is required for the more sophisticated modes.
+    Citus Community edition supports only the ``block_writes`` mode, and treats ``auto`` as ``block_writes``. Our :ref:`cloud_topic` is required for the more sophisticated modes.
 
 Return Value
 ************
@@ -1444,7 +1392,7 @@ Arguments
 
   .. note::
 
-    Citus Community edition supports only the ``block_writes`` mode, and treats ``auto`` as ``block_writes``. Citus Enterprise edition is required for the more sophisticated modes.
+    Citus Community edition supports only the ``block_writes`` mode, and treats ``auto`` as ``block_writes``. Our :ref:`cloud_topic` is required for the more sophisticated modes.
 
 **drain_only:** (Optional) When true, move shards off worker nodes who have ``shouldhaveshards`` set to false in :ref:`pg_dist_node`; move no other shards.
 
@@ -1654,7 +1602,7 @@ Arguments
 
   .. note::
 
-    Citus Community edition supports only the ``block_writes`` mode, and treats ``auto`` as ``block_writes``. Citus Enterprise edition is required for the more sophisticated modes.
+    Citus Community edition supports only the ``block_writes`` mode, and treats ``auto`` as ``block_writes``. Our :ref:`cloud_topic` is required for the more sophisticated modes.
 
 **rebalance_strategy:** (Optional) the name of a strategy in :ref:`pg_dist_rebalance_strategy`. If this argument is omitted, the function chooses the default strategy, as indicated in the table.
 
@@ -1694,49 +1642,13 @@ When draining multiple nodes it's recommended to use :ref:`rebalance_table_shard
 3. Wait until the draining rebalance finishes
 4. Remove the nodes
 
-replicate_table_shards
-$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
-
-The replicate_table_shards() function replicates the under-replicated shards of the given table. The function first calculates the list of under-replicated shards and locations from which they can be fetched for replication. The function then copies over those shards and updates the corresponding shard metadata to reflect the copy.
-
-Arguments
-*************************
-
-**table_name:** The name of the table whose shards need to be replicated.
-
-**shard_replication_factor:** (Optional) The desired replication factor to achieve for each shard.
-
-**max_shard_copies:** (Optional) Maximum number of shards to copy to reach the desired replication factor.
-
-**excluded_shard_list:** (Optional) Identifiers of shards which shouldn't be copied during the replication operation.
-
-Return Value
-***************************
-
-N/A
-
-Examples
-**************************
-
-The example below will attempt to replicate the shards of the github_events table to shard_replication_factor.
-
-.. code-block:: postgresql
-
-	SELECT replicate_table_shards('github_events');
-
-This example will attempt to bring the shards of the github_events table to the desired replication factor with a maximum of 10 shard copies. This means that the rebalancer will copy only a maximum of 10 shards in its attempt to reach the desired replication factor.
-
-.. code-block:: postgresql
-
-	SELECT replicate_table_shards('github_events', max_shard_copies:=10);
-
 .. _isolate_tenant_to_new_shard:
 
 isolate_tenant_to_new_shard
 $$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$
 
 .. note::
-  The isolate_tenant_to_new_shard function is a part of Citus Enterprise. Please `contact us <https://www.citusdata.com/about/contact_us>`_ to obtain this functionality.
+  The isolate_tenant_to_new_shard function is a part of our :ref:`cloud_topic` only.
 
 This function creates a new shard to hold rows with a specific single value in the distribution column. It is especially handy for the multi-tenant Citus use case, where a large tenant can be placed alone on its own shard and ultimately its own physical node.
 

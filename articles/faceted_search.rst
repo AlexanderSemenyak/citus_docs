@@ -3,6 +3,16 @@ Scalable Real-time Product Search using PostgreSQL with Citus
 
 (Copy of `original publication <https://www.citusdata.com/blog/2016/04/28/scalable-product-search/>`__)
 
+.. NOTE::
+
+   This article mentions the Citus Cloud service.  We are no longer onboarding
+   new users to Citus Cloud on AWS. If you’re new to Citus, the good news is,
+   Citus is still available to you: as open source, and in the cloud on
+   Microsoft Azure, as a fully-integrated deployment option in Azure Database
+   for PostgreSQL.
+
+   See :ref:`cloud_topic`.
+
 Product search is a common, yet sometimes challenging use-case for
 online retailers and marketplaces. It typically involves a combination
 of full-text search and filtering by attributes which differ for every
@@ -82,21 +92,6 @@ higher when sorting by relevance.
       SELECT setweight(to_tsvector(name),'A') ||
              setweight(to_tsvector(description),'B');
     $function$;
-
-To use the product\_text\_search function in queries and
-indexes, it also needs to be created on the workers. We'll use
-``run_command_on_workers`` to do this (see :ref:`worker_propagation` for
-more info).
-
-.. code:: postgresql
-
-    SELECT run_command_on_workers($cmd$
-      CREATE FUNCTION product_text_search(name text, description text)
-      RETURNS tsvector LANGUAGE sql IMMUTABLE AS $function$
-        SELECT setweight(to_tsvector(name),'A') ||
-               setweight(to_tsvector(description),'B');
-      $function$;
-    $cmd$);
 
 After setting up the function, we define a GIN index on it, which speeds
 up text searches on the product table.
